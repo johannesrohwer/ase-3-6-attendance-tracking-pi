@@ -119,13 +119,53 @@ class Scan(State):
             scanner.scan(zbar_image)
 
             # Prints data from image.
+            qr_payload = None
+
             for decoded in zbar_image:
                 print(decoded.data)
-                self.scannedString = decoded.data
-                self.state_manager.set_state(Idle(self.state_manager))
-                return
+                qr_payload = decoded.data
+                break
+
+            self.state_manager.set_state(Idle(self.state_manager, data=qr_payload))
 
 
+class Verify(State):
+
+    def execute(self):
+        print("- - -")
+
+        # take qr string
+        self.data
+
+    def handle_input(self, event):
+        raise NotImplementedError
+
+    def transition(self):
+        raise NotImplementedError
+
+
+class Presented(State):
+
+    def execute(self):
+        print("- - -")
+
+    def handle_input(self, event):
+        raise NotImplementedError
+
+    def transition(self):
+        raise NotImplementedError
+
+
+class Send(State):
+
+    def execute(self):
+        print("- - -")
+
+    def handle_input(self, event):
+        raise NotImplementedError
+
+    def transition(self):
+        raise NotImplementedError
 
 class StateManager:
     state = None
