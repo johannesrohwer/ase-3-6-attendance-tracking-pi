@@ -29,7 +29,7 @@ class Idle_State(State):
         print("Idle state")
 
 
-class Authentification_State(State):
+class Authentication(State):
     id = None
     password = None
     authorization_token = None
@@ -97,4 +97,4 @@ class StateManager:
 if __name__ == "__main__":
     print('Welcome to ASE Attendance Tracking')
     sm = StateManager()
-    sm.push(Authentification_State(sm))
+    sm.push(Authentication(sm))
