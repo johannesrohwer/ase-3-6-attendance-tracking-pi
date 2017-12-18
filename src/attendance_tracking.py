@@ -39,8 +39,8 @@ class Authentication(State):
 
         # Get credentials from user
         print('Please authenticate yourself.')
-        self.id = input('ID:\t')
-        self.password = input('password:\t')
+        self.id = raw_input('ID:\t')
+        self.password = raw_input('password:\t')
 
         # Send credentials to API and obtain Authorization token
         url = Constants.BASE_URL + '/api/login'

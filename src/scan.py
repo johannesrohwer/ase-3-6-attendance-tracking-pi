@@ -1,13 +1,16 @@
 import zbar
-
 from PIL import Image
 import cv2
-
 from attendance_tracking import State
 
 class Scan(State):
+    state_manager = None
+
+    def __init__(self, state_manager):
+        self.state_manager = state_manager
 
     def execute(self):
+        print("Scan State")
         self.scanQRCode()
 
     def handle_input(self, event):
