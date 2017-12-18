@@ -2,7 +2,6 @@
 
 import requests
 
-
 class Constants(object):
     BASE_URL = 'https://ase-3-6-attendance-tracking.appspot.com'
     AUTH_TOKEN = ""
@@ -51,7 +50,7 @@ class Authentication(State):
 
         if response.status_code == 200:
             self.authorization_token = responseObj["token"]
-            print(self.authorization_token)
+            print(self.authorization_token) # TODO: Remove
 
         else:
             print("An error occured: {}".format(responseObj["error"]))
