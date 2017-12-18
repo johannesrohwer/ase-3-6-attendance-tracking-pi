@@ -3,12 +3,12 @@
 import requests
 
 
-class Constants:
+class Constants(object):
     BASE_URL = 'https://ase-3-6-attendance-tracking.appspot.com'
     AUTH_TOKEN = ""
 
 
-class State:
+class State(object):
     state_manager = None
 
     def __init__(self, state_manager):
@@ -35,7 +35,7 @@ class Authentication(State):
     authorization_token = None
 
     def execute(self):
-        super().execute()
+        super(Authentication, self).execute()
 
         # Get credentials from user
         print('Please authenticate yourself.')
@@ -51,6 +51,7 @@ class Authentication(State):
 
         if response.status_code == 200:
             self.authorization_token = responseObj["token"]
+            print(self.authorization_token)
 
         else:
             print("An error occured: {}".format(responseObj["error"]))
@@ -70,7 +71,7 @@ class Authentication(State):
 
         else:
             # An error occured, start again
-            self.state_manager.replace(Authentification_State(self.state_manager))
+            self.state_manager.replace(Authentication(self.state_manager))
 
 
 class StateManager:
