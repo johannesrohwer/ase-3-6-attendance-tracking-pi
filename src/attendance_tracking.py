@@ -4,6 +4,7 @@ import requests
 import zbar
 from PIL import Image
 import cv2
+import jwt
 
 
 class Constants(object):
@@ -30,11 +31,9 @@ class State(object):
 
 
 class Idle(State):
-
     def execute(self):
         print("Idle state")
         self.state_manager.set_state(Scan(self.state_manager))
-
 
 
 class Authentication(State):
@@ -82,9 +81,7 @@ class Authentication(State):
             self.state_manager.set_state(Authentication(self.state_manager))
 
 
-
 class Scan(State):
-
     def execute(self):
         print("Scan State")
         self.scanQRCode()
@@ -124,48 +121,72 @@ class Scan(State):
             for decoded in zbar_image:
                 print(decoded.data)
                 qr_payload = decoded.data
-                break
+                self.state_manager.set_state(Verify(self.state_manager, data=qr_payload))
+                return
 
-            self.state_manager.set_state(Idle(self.state_manager, data=qr_payload))
+                # TODO: re-add this line when we have proper interrupt handling...
+                # self.state_manager.set_state(Idle(self.state_manager, data=qr_payload))
 
 
 class Verify(State):
-
     def execute(self):
-        print("- - -")
-
-        # take qr string
-        self.data
-
-    def handle_input(self, event):
-        raise NotImplementedError
-
-    def transition(self):
-        raise NotImplementedError
-
+        token = self.data
+        decoded_token = jwt.decode(token, verify=False)  # TODO: enable signature validation
+        print(decoded_token)
+        if decoded_token["attendance"]["presented"]:
+            self.state_manager.set_state(Presented(self.state_manager, data={'token': token}))
 
 class Presented(State):
+    choice = None
+    choice_made = False
 
     def execute(self):
-        print("- - -")
+        print('Did the student present?')
+        placeholder = raw_input('Yes / No')
 
-    def handle_input(self, event):
-        raise NotImplementedError
+        # while not self.choice_made:
+
+        if placeholder == "yes":
+            self.transition()
+        else:
+            self.state_manager.set_state(Idle(self.state_manager))
+
 
     def transition(self):
-        raise NotImplementedError
+        # TODO: check if presentation status was approved
+        self.state_manager.set_state(Send(self.state_manager, data=self.data))
 
 
 class Send(State):
-
     def execute(self):
         print("- - -")
+
+        # Send the data to the server and mark the attendance
+        url = Constants.BASE_URL + '/api/attendances/register'
+
+        payload = self.data
+
+        print(payload)
+        response = requests.post(url, headers={'Authorization': Constants.AUTH_TOKEN}, json=payload)
+        response_obj = response.json()
+        print(response.url)
+
+        print("rsponse code")
+        print(response.status_code)
+        if response.status_code == 201 or response.status_code == 200:
+            print("The attendance has been tracked.")
+
+        else:
+            print("An error occured: {}".format(response_obj["error"]))
+
+        self.transition()
 
     def handle_input(self, event):
         raise NotImplementedError
 
     def transition(self):
-        raise NotImplementedError
+        self.state_manager.set_state(Idle(self.state_manager))
+
 
 class StateManager:
     state = None
@@ -181,4 +202,4 @@ class StateManager:
 if __name__ == "__main__":
     print('Welcome to ASE Attendance Tracking')
     sm = StateManager()
-    #sm.set_state(Authentication(sm))
+    sm.set_state(Authentication(sm))
