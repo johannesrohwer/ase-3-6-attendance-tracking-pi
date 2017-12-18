@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import requests
+import zbar
+from PIL import Image
+import cv2
 
 class Constants(object):
     BASE_URL = 'https://ase-3-6-attendance-tracking.appspot.com'
@@ -9,9 +12,11 @@ class Constants(object):
 
 class State(object):
     state_manager = None
+    data = None
 
-    def __init__(self, state_manager):
+    def __init__(self, state_manager, data=None):
         self.state_manager = state_manager
+        self.data = data
 
     def execute(self):
         print("- - -")
@@ -23,9 +28,12 @@ class State(object):
         raise NotImplementedError
 
 
-class Idle_State(State):
+class Idle(State):
+
     def execute(self):
         print("Idle state")
+        self.state_manager.set_state(Scan(self.state_manager))
+
 
 
 class Authentication(State):
@@ -36,10 +44,11 @@ class Authentication(State):
     def execute(self):
         super(Authentication, self).execute()
 
+        print("Authentication State")
         # Get credentials from user
         print('Please authenticate yourself.')
-        self.id = input('ID:\t')
-        self.password = input('password:\t')
+        self.id = raw_input('ID:\t')
+        self.password = raw_input('password:\t')
 
         # Send credentials to API and obtain Authorization token
         url = Constants.BASE_URL + '/api/login'
@@ -58,43 +67,77 @@ class Authentication(State):
         self.transition()
 
     def handle_input(self, event):
-        raise NotImplementedError
+        return
 
     def transition(self):
         if self.authorization_token:
-            # Pass token to state manager
-            self.state_manager.authorization_token = self.authorization_token
+            Constants.AUTH_TOKEN = self.authorization_token
 
             # Perform the transition to the next state
-            self.state_manager.replace(Idle_State(self.state_manager))
+            self.state_manager.set_state(Idle(self.state_manager))
 
         else:
             # An error occured, start again
-            self.state_manager.replace(Authentication(self.state_manager))
+            self.state_manager.set_state(Authentication(self.state_manager))
+
+
+
+class Scan(State):
+
+    def execute(self):
+        print("Scan State")
+        self.scanQRCode()
+
+    def handle_input(self, event):
+        pass
+
+    def transition(self):
+        raise NotImplementedError
+
+    def scanQRCode(self):
+        capture = cv2.VideoCapture(0)
+
+        # Search until you find a QR Code to decode
+        while True:
+            # Breaks down the video into frames
+            ret, frame = capture.read()
+
+            # Displays the current frame
+            cv2.imshow('Current', frame)
+
+            # Converts image to grayscale.
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # Uses PIL to convert the grayscale image into a ndary array that ZBar can understand.
+            image = Image.fromarray(gray)
+            width, height = image.size
+            zbar_image = zbar.Image(width, height, 'Y800', image.tobytes())
+
+            # Scans the zbar image.
+            scanner = zbar.ImageScanner()
+            scanner.scan(zbar_image)
+
+            # Prints data from image.
+            for decoded in zbar_image:
+                print(decoded.data)
+                self.scannedString = decoded.data
+                self.state_manager.set_state(Idle(self.state_manager))
+                return
+
 
 
 class StateManager:
-    states = []
+    state = None
 
-    def push(self, state):
-        self.states.append(state)
-        self.peek().execute()
+    def set_state(self, state):
+        self.state = state
+        self.state.execute()
 
-    def pop(self):
-        return self.states.pop()
-
-    def replace(self, state):
-        self.pop()
-        self.push(state)
-
-    def peek(self):
-        return self.states[-1]
-
-    def reset(self):
-        self.states = []  # TODO: set idle state
+    def handle_input(self, event):
+        self.peek().handle_input(event)
 
 
 if __name__ == "__main__":
     print('Welcome to ASE Attendance Tracking')
     sm = StateManager()
-    sm.push(Authentication(sm))
+    #sm.set_state(Authentication(sm))
