@@ -100,7 +100,7 @@ class Scan(State):
             ret, frame = capture.read()
 
             # Displays the current frame
-            cv2.imshow('Current', frame)
+            # cv2.imshow('Current', frame)
 
             # Converts image to grayscale.
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -129,11 +129,14 @@ class Scan(State):
 
 class Verify(State):
     def execute(self):
+        print("Entering verify")
         token = self.data
         decoded_token = jwt.decode(token, verify=False)  # TODO: enable signature validation
         print(decoded_token)
         if decoded_token["attendance"]["presented"]:
             self.state_manager.set_state(Presented(self.state_manager, data={'token': token}))
+        else:
+            self.state_manager.set_state(Send(self.state_manager, data={'token': token}))
 
 class Presented(State):
     choice = None
@@ -184,8 +187,9 @@ class Send(State):
         raise NotImplementedError
 
     def transition(self):
-        self.state_manager.set_state(Idle(self.state_manager))
-
+        # self.state_manager.set_state(Idle(self.state_manager))
+        while True:
+                pass
 
 class StateManager:
     state = None
