@@ -5,6 +5,8 @@ import zbar
 from PIL import Image
 import cv2
 import jwt
+import pifacecad
+
 
 class Constants(object):
     BASE_URL = 'https://ase-3-6-attendance-tracking.appspot.com'
@@ -133,6 +135,7 @@ class Verify(State):
         token = self.data
         decoded_token = jwt.decode(token, verify=False)  # TODO: enable signature validation
         print(decoded_token)
+        cad.lcd.write("Student:"+decoded_token["attendance"]["student_id"])
         if decoded_token["attendance"]["presented"]:
             self.state_manager.set_state(Presented(self.state_manager, data={'token': token}))
         else:
@@ -205,4 +208,31 @@ class StateManager:
 if __name__ == "__main__":
     print('Welcome to ASE Attendance Tracking')
     sm = StateManager()
+
+    # get an object for the display
+    cad = pifacecad.PiFaceCAD()
+
+    # write a string to the display
+    # cad.lcd.write("Hello, world!")
+
+    # read the value of a switch
+    # cad.switches[3].value
+
+    # set the cursor position
+    # first value is the column, second value is the row (0 or 1)
+    cad.lcd.set_cursor(4, 1)
+
+    # create a listener:
+    listener = pifacecad.SwitchEventListener(chip=cad)
+
+    # bind all switches to handler
+    for i in range(8):
+        listener.register(i, pifacecad.IODIR_FALLING_EDGE, sm.handle_input)
+
+    listener.activate()
+
+
+    # trigger when the button is released
+    # listener.register(0, pifacecad.IODIR_RISING_EDGE, sm.handle_input())
+
     sm.set_state(Authentication(sm))
