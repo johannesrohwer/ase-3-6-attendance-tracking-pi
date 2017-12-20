@@ -7,6 +7,20 @@ import cv2
 import jwt
 import pifacecad
 
+import os
+import signal
+import sys
+
+# you can ignore these three lines of code
+# they are needed so that you can end the
+# program by pressing Ctrl+C
+def signal_handler(signal, frame):
+    if sys.version_info < (3,0):
+        # the python2 code forks
+        os.kill(os.getppid(),9)
+    os.kill(os.getpid(),9)
+signal.signal(signal.SIGINT, signal_handler)
+
 
 class Constants(object):
     BASE_URL = 'https://ase-3-6-attendance-tracking.appspot.com'
@@ -142,24 +156,32 @@ class Verify(State):
             self.state_manager.set_state(Send(self.state_manager, data={'token': token}))
 
 class Presented(State):
-    choice = None
+    ok = None
     choice_made = False
 
     def execute(self):
-        print('Did the student present?')
-        placeholder = raw_input('Yes / No')
+        cad.lcd.clear()
+        cad.lcd.write('presented?')
 
-        # while not self.choice_made:
+        while not self.choice_made:
+            pass
 
-        if placeholder == "yes":
-            self.transition()
+        if self.ok:
+            self.state_manager.set_state(Send(self.state_manager, data=self.data))
         else:
             self.state_manager.set_state(Idle(self.state_manager))
 
+    def handle_input(self, event):
+        if event.pin_num == 0:
+            self.choice_made = True
+            self.ok = True
+        elif event.pin_num == 1:
+            self.choice_made = True
+            self.ok = False
 
     def transition(self):
         # TODO: check if presentation status was approved
-        self.state_manager.set_state(Send(self.state_manager, data=self.data))
+        pass
 
 
 class Send(State):
@@ -180,6 +202,9 @@ class Send(State):
         print(response.status_code)
         if response.status_code == 201 or response.status_code == 200:
             print("The attendance has been tracked.")
+
+            cad.lcd.clear()
+            cad.lcd.write('Tracked!')
 
         else:
             print("An error occured: {}".format(response_obj["error"]))
@@ -202,7 +227,7 @@ class StateManager:
         self.state.execute()
 
     def handle_input(self, event):
-        self.peek().handle_input(event)
+        self.state.handle_input(event)
 
 
 if __name__ == "__main__":
@@ -218,10 +243,6 @@ if __name__ == "__main__":
     # read the value of a switch
     # cad.switches[3].value
 
-    # set the cursor position
-    # first value is the column, second value is the row (0 or 1)
-    cad.lcd.set_cursor(4, 1)
-
     # create a listener:
     listener = pifacecad.SwitchEventListener(chip=cad)
 
@@ -230,9 +251,5 @@ if __name__ == "__main__":
         listener.register(i, pifacecad.IODIR_FALLING_EDGE, sm.handle_input)
 
     listener.activate()
-
-
-    # trigger when the button is released
-    # listener.register(0, pifacecad.IODIR_RISING_EDGE, sm.handle_input())
 
     sm.set_state(Authentication(sm))
