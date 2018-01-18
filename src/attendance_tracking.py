@@ -44,6 +44,10 @@ class State(object):
     def transition(self):
         raise NotImplementedError
 
+    def write_state_to_piface(self, state):
+        cad.lcd.clear()
+        cad.lcd.write(state)
+
 
 # Subclasses of the State Class.
 
@@ -55,6 +59,9 @@ class Authentication(State):
 
     def execute(self):
         print("Authentication State")
+
+        # Write current state to piface.
+        super(Authentication, self).write_state_to_piface("Authentication")
 
         # Get credentials from user.
         print('Please authenticate yourself.')
@@ -96,26 +103,43 @@ class Authentication(State):
 
 # Idle State of the program. As of now, will change into the Scan State immediately.
 class Idle(State):
+    start = False
     def execute(self):
         print("Idle state")
 
-        # TODO: Consider if we want to have another branch from the Idle State
-        # to another one.
+        # Write current state to piface.
+        super(Idle, self).write_state_to_piface("Idle")
+
+        while not self.start:
+            self.transition()
+
+    # Perform transition to Scan State when button is pushed.
+    def handle_input(self, event):
+        if event.pin_num == 0:
+            start = True
+
+    def transition(self):
         self.state_manager.set_state(Scan(self.state_manager))
+
 
 
 # Scan State, waits for the QR Code to be scanned and processes it.
 class Scan(State):
     qr_payload = None
+    cancel = False
 
     def execute(self):
         print("Scan State")
+
+        # Write current state to piface.
+        super(Scan, self).write_state_to_piface("Scan")
+
         self.scanQRCode()
 
-    # No input handling needed for this State, tutor just has to hold camera
-    # in front of QR Code.
+    # Handle cancelling of Scan State from user side, return back to Idle.
     def handle_input(self, event):
-        pass
+        if event.pin_num == 3:
+            self.cancel = True
 
     def scanQRCode(self):
         capture = cv2.VideoCapture(0)
@@ -143,20 +167,25 @@ class Scan(State):
                 self.transition()
                 return
 
-                # TODO: re-add this line when we have proper interrupt handling...
-                # self.state_manager.set_state(Idle(self.state_manager, data=qr_payload))
 
     def transition(self):
-        self.state_manager.set_state(Verify(self.state_manager, data=self.qr_payload))
+        if self.cancel:
+            self.state_manager.set_state(Idle(self.state_manager))
+        else:
+            self.state_manager.set_state(Verify(self.state_manager, data=self.qr_payload))
 
 
 # Checks whether the student wants to track attendance for the correct group, and if they selected
 # in the Android app whether they presented or not.
 class Verify(State):
     presented = None
+    cancel = False
 
     def execute(self):
         print("Verify State")
+
+        # Write current state to piface.
+        super(Verify, self).write_state_to_piface("Verify")
 
         token = self.data
         decoded_token = jwt.decode(token, verify=False)  # TODO: enable signature validation
@@ -167,11 +196,22 @@ class Verify(State):
 
         self.transition()
 
+    # Handle cancelling of Verify State from user side, return back to Idle.
+    def handle_input(self, event):
+        if event.pin_num == 3:
+            self.cancel = True
+
     # Depending on whether the student presented or not, transition to Send or Presented State.
     def transition(self):
+
         token = self.data
-        if self.presented:
+
+        if self.cancel:
+            self.state_manager.set_state(Idle(self.state_manager))
+
+        elif self.presented:
             self.state_manager.set_state(Presented(self.state_manager, data={'token': token}))
+
         else:
             self.state_manager.set_state(Send(self.state_manager, data={'token': token}))
 
@@ -180,13 +220,17 @@ class Verify(State):
 class Presented(State):
     ok = None
     choice_made = False
+    cancel = False
 
     def execute(self):
         print("Presented State")
 
         # Write out prompt to piface.
-        cad.lcd.clear()
-        cad.lcd.write('Presented?')
+        # cad.lcd.clear()
+        # cad.lcd.write('Presented?')
+
+        # Write current state to piface.
+        super(Presented, self).write_state_to_piface("Presented?")
 
         while not self.choice_made:
             pass
@@ -194,17 +238,29 @@ class Presented(State):
         # As soon tutor made a choice, move to the appropriate next state.
         self.transition()
 
+
     def handle_input(self, event):
-        if event.pin_num == 0:
+
+        # Handle cancelling of Presented State from user side, return back to Idle.
+        if event.pin_num == 3:
+            self.cancel = True
+
+        # Handle the yes/no prompt.
+        elif event.pin_num == 0:
             self.choice_made = True
             self.ok = True
+
         elif event.pin_num == 1:
             self.choice_made = True
             self.ok = False
 
     def transition(self):
-        if self.ok:
+        if self.cancel:
+            self.state_manager.set_state(Idle(self.state_manager))
+
+        elif self.ok:
             self.state_manager.set_state(Send(self.state_manager, data=self.data))
+
         else:
             self.state_manager.set_state(Idle(self.state_manager))
 
@@ -213,6 +269,9 @@ class Presented(State):
 class Send(State):
     def execute(self):
         print("Send State")
+
+        # Write current state to piface.
+        super(Authentication, self).write_state_to_piface("Sending")
 
         # Send the data to the server and mark the attendance
         url = Constants.BASE_URL + '/api/attendances/register'
@@ -233,13 +292,14 @@ class Send(State):
         self.transition()
 
     def handle_input(self, event):
-        raise NotImplementedError
+        if event.pin_num == 3:
+            self.cancel = True
 
     def transition(self):
-        # self.state_manager.set_state(Idle(self.state_manager))
-        # TODO: For now, the program does not have a loop back into the idle state.
-        while True:
-            pass
+
+        if self.cancel:
+            self.state_manager.set_state(Idle(self.state_manager))
+
 
 
 # StateManager handles all States internally and propagates input events to the appropriate subclass of the state.
