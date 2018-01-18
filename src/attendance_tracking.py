@@ -7,10 +7,18 @@ import pifacecad
 import os
 import signal
 import sys
+import time
+import getpass
+
+
+LEFT_BUTTON = 0
+RIGHT_BUTTON = 4
 
 
 # Enable Ctrl+C quit of program
 def signal_handler(signal, frame):
+    cad.lcd.clear()
+
     if sys.version_info < (3, 0):
         # the python2 code forks
         os.kill(os.getppid(), 9)
@@ -18,6 +26,7 @@ def signal_handler(signal, frame):
 
 
 signal.signal(signal.SIGINT, signal_handler)
+
 
 
 # Base URL and authentication token for API communication
@@ -44,9 +53,10 @@ class State(object):
     def transition(self):
         raise NotImplementedError
 
-    def write_state_to_piface(self, state):
+    def write_state_to_piface(self, state, left="", right=""):
         cad.lcd.clear()
         cad.lcd.write(state)
+        write_ui(left, right)
 
 
 # Subclasses of the State Class.
@@ -64,9 +74,15 @@ class Authentication(State):
         super(Authentication, self).write_state_to_piface("Authentication")
 
         # Get credentials from user.
-        print('Please authenticate yourself.')
-        self.id = raw_input('ID:\t')
-        self.password = raw_input('password:\t')
+        params = sys.argv
+        if len(params) > 2:
+            self.id = params[1]
+            self.password = params[2]
+        else:
+            print('Please authenticate yourself.')
+            self.id = raw_input("ID:\t")
+            self.password = getpass.getpass("password: \t")
+
 
         # Send credentials to API and obtain Authorization token.
         url = Constants.BASE_URL + '/api/login'
@@ -104,19 +120,26 @@ class Authentication(State):
 # Idle State of the program. As of now, will change into the Scan State immediately.
 class Idle(State):
     start = False
+    cancel = False
+
     def execute(self):
         print("Idle state")
 
         # Write current state to piface.
-        super(Idle, self).write_state_to_piface("Idle")
+        super(Idle, self).write_state_to_piface("Idle", left="SCAN", right="END")
 
         while not self.start:
-            self.transition()
+            pass
+
+        self.transition()
 
     # Perform transition to Scan State when button is pushed.
     def handle_input(self, event):
-        if event.pin_num == 0:
-            start = True
+        if event.pin_num == LEFT_BUTTON:
+            self.start = True
+        if event.pin_num == RIGHT_BUTTON:
+            cad.lcd.clear()
+            os.kill(os.getpid(), 9)
 
     def transition(self):
         self.state_manager.set_state(Scan(self.state_manager))
@@ -132,13 +155,13 @@ class Scan(State):
         print("Scan State")
 
         # Write current state to piface.
-        super(Scan, self).write_state_to_piface("Scan")
+        super(Scan, self).write_state_to_piface("Scan", right="CANCEL")
 
         self.scanQRCode()
 
     # Handle cancelling of Scan State from user side, return back to Idle.
     def handle_input(self, event):
-        if event.pin_num == 3:
+        if event.pin_num == RIGHT_BUTTON:
             self.cancel = True
 
     def scanQRCode(self):
@@ -164,8 +187,14 @@ class Scan(State):
             for decoded in zbar_image:
                 # print(decoded.data)
                 self.qr_payload = decoded.data
+                capture.release()
                 self.transition()
+
                 return
+
+            if self.cancel:
+                capture.release()
+                self.transition()
 
 
     def transition(self):
@@ -191,7 +220,9 @@ class Verify(State):
         decoded_token = jwt.decode(token, verify=False)  # TODO: enable signature validation
 
         # print(decoded_token)
+        cad.lcd.clear()
         cad.lcd.write("Student:" + decoded_token["attendance"]["student_id"])
+
         self.presented = decoded_token["attendance"]["presented"]
 
         self.transition()
@@ -220,7 +251,6 @@ class Verify(State):
 class Presented(State):
     ok = None
     choice_made = False
-    cancel = False
 
     def execute(self):
         print("Presented State")
@@ -230,7 +260,7 @@ class Presented(State):
         # cad.lcd.write('Presented?')
 
         # Write current state to piface.
-        super(Presented, self).write_state_to_piface("Presented?")
+        super(Presented, self).write_state_to_piface("Presented?", left="YES", right="NO")
 
         while not self.choice_made:
             pass
@@ -241,24 +271,17 @@ class Presented(State):
 
     def handle_input(self, event):
 
-        # Handle cancelling of Presented State from user side, return back to Idle.
-        if event.pin_num == 3:
-            self.cancel = True
-
         # Handle the yes/no prompt.
-        elif event.pin_num == 0:
+        if event.pin_num == LEFT_BUTTON:
             self.choice_made = True
             self.ok = True
 
-        elif event.pin_num == 1:
+        elif event.pin_num == RIGHT_BUTTON:
             self.choice_made = True
             self.ok = False
 
     def transition(self):
-        if self.cancel:
-            self.state_manager.set_state(Idle(self.state_manager))
-
-        elif self.ok:
+        if self.ok:
             self.state_manager.set_state(Send(self.state_manager, data=self.data))
 
         else:
@@ -267,11 +290,14 @@ class Presented(State):
 
 # In the Send State the attendance is being sent to the server and tracked.
 class Send(State):
+
+    finish = False
+
     def execute(self):
         print("Send State")
 
         # Write current state to piface.
-        super(Authentication, self).write_state_to_piface("Sending")
+        super(Send, self).write_state_to_piface("Sending...")
 
         # Send the data to the server and mark the attendance
         url = Constants.BASE_URL + '/api/attendances/register'
@@ -279,26 +305,50 @@ class Send(State):
         response = requests.post(url, headers={'Authorization': Constants.AUTH_TOKEN}, json=payload)
         response_obj = response.json()
 
+        time.sleep(1)
+
         # Display message to piface in case of success.
         if response.status_code == 201 or response.status_code == 200:
             # print("The attendance has been tracked.")
 
             cad.lcd.clear()
             cad.lcd.write('Tracked!')
+            write_ui(left="OK")
 
         else:
             print("An error occured: {}".format(response_obj["error"]))
 
+        while not self.finish:
+            pass
+
         self.transition()
 
     def handle_input(self, event):
-        if event.pin_num == 3:
-            self.cancel = True
+        if event.pin_num == LEFT_BUTTON:
+            self.finish = True
 
     def transition(self):
 
+        if self.finish:
+            self.state_manager.set_state(Idle(self.state_manager))
+
         if self.cancel:
             self.state_manager.set_state(Idle(self.state_manager))
+
+
+
+
+
+
+def write_ui(left="", right=""):
+
+   if left is not "":
+       cad.lcd.set_cursor(0, 1)
+       cad.lcd.write(left)
+
+   if right is not "":
+       cad.lcd.set_cursor(8, 1)
+       cad.lcd.write(right)
 
 
 
@@ -320,6 +370,7 @@ if __name__ == "__main__":
 
     # Get an object for the display.
     cad = pifacecad.PiFaceCAD()
+    cad.lcd.cursor_off()
 
     # Create a listener.
     listener = pifacecad.SwitchEventListener(chip=cad)
